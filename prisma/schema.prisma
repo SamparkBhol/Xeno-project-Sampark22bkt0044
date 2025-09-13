@@ -1,0 +1,182 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============
+// TENANT MODEL
+// ==============
+model Tenant {
+  id            String     @id @default(uuid())
+  name          String
+  shopifyDomain String     @unique
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  customers     Customer[]
+  products      Product[]
+  orders        Order[]
+  carts         Cart[]
+}
+
+// ==============
+// SHOPIFY-RELATED MODELS
+// ==============
+
+model Customer {
+  id                  String  @id @default(uuid())
+  shopifyCustomerId   String
+  firstName           String?
+  lastName            String?
+  email               String?
+  phone               String?
+  address             Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders              Order[]
+  carts               Cart[]
+
+  @@unique([shopifyCustomerId, tenantId])
+  @@index([tenantId])
+}
+
+model Product {
+  id               String      @id @default(uuid())
+  shopifyProductId String
+  title            String
+  handle           String?
+  vendor           String?
+  productType      String?
+  imageUrl         String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  tenantId         String
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  variants         Variant[]
+  orderItems       OrderItem[]
+  cartItems        CartItem[]
+
+  @@unique([shopifyProductId, tenantId])
+  @@index([tenantId])
+}
+
+model Variant {
+  id               String   @id @default(uuid())
+  shopifyVariantId String
+  title            String
+  sku              String?
+  price            Float
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tenantId         String
+  // No direct relation to Tenant to avoid redundancy, access through Product
+
+  @@unique([shopifyVariantId, tenantId])
+  @@index([productId])
+}
+
+model Order {
+  id                 String        @id @default(uuid())
+  shopifyOrderId     String
+  orderNumber        String
+  totalPrice         Float
+  currency           String
+  financialStatus    String?
+  fulfillmentStatus  String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  customerId         String?
+  customer           Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tenantId           String
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items              OrderItem[]
+  transactions       Transaction[]
+
+  @@unique([shopifyOrderId, tenantId])
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id                String   @id @default(uuid())
+  shopifyLineItemId String
+  quantity          Int
+  price             Float
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String?
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  tenantId          String
+  // No direct relation to Tenant to avoid redundancy
+
+  @@unique([shopifyLineItemId, tenantId])
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Transaction {
+  id                   String   @id @default(uuid())
+  shopifyTransactionId String
+  amount               Float
+  kind                 String // e.g., 'sale', 'refund'
+  status               String // e.g., 'success', 'pending', 'failure'
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  orderId              String
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenantId             String
+  // No direct relation to Tenant to avoid redundancy
+
+  @@unique([shopifyTransactionId, tenantId])
+  @@index([orderId])
+}
+
+
+// BONUS: Cart & Checkout Models
+model Cart {
+  id               String     @id @default(uuid())
+  shopifyCartToken String // This can be cart_token from cart webhooks or checkout id
+  totalPrice       Float
+  status           String     @default("active") // active, checkout_started, abandoned, completed
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  customerId       String?
+  customer         Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tenantId         String
+  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items            CartItem[]
+
+  @@unique([shopifyCartToken, tenantId])
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model CartItem {
+  id                String   @id @default(uuid())
+  shopifyLineItemId String // May not be a real ID from Shopify, can be composite
+  quantity          Int
+  price             Float
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  cartId            String
+  cart              Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId         String?
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  tenantId          String
+  // No direct relation to Tenant to avoid redundancy
+
+  @@index([cartId])
+  @@index([productId])
+}
