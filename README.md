@@ -34,6 +34,7 @@ To deliver a functional proof-of-concept within the assignment's scope, the foll
 ### 2\. High-Level Architecture
 
 The service is designed using a modern, decoupled three-tier architecture, which ensures scalability, maintainability, and a clear separation of concerns.
+<img width="660" height="597" alt="image" src="https://github.com/user-attachments/assets/979c634b-41cb-4e45-b0f6-7458241fe8a4" />
 
 **Components:**
 
