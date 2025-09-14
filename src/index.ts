@@ -1,20 +1,37 @@
 import express from 'express';
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
-import { handleWebhook } from './services/webhookService';
 import axios from 'axios';
+import amqp from 'amqplib';
 import 'dotenv/config';
 
 const app = express();
-const prisma = new PrismaClient();
 
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
-const APP_URL = process.env.APP_URL;
+const APP_URL = process.env.APP_URL; // Your ngrok URL
+const RABBITMQ_URL = process.env.RABBITMQ_URL;
 
-// =================================================================
-// NEW FUNCTION - This function tells Shopify to create a webhook subscription
-// =================================================================
+let amqpChannel: amqp.Channel | null = null;
+const QUEUE_NAME = 'shopify_webhooks';
+
+// Function to connect to RabbitMQ
+async function connectRabbitMQ() {
+    try {
+        if (!RABBITMQ_URL) {
+            throw new Error("RABBITMQ_URL is not defined in the environment variables.");
+        }
+        const connection = await amqp.connect(RABBITMQ_URL);
+        amqpChannel = await connection.createChannel();
+        await amqpChannel.assertQueue(QUEUE_NAME, { durable: true });
+        console.log('Successfully connected to RabbitMQ and asserted queue.');
+    } catch (error) {
+        console.error('Failed to connect to RabbitMQ:', error);
+        // In a real app, you'd have a retry mechanism here.
+    }
+}
+
+
+// Function to register a webhook with Shopify's API
 async function registerWebhook(shop: string, accessToken: string, topic: string) {
     const webhookUrl = `${APP_URL}/webhooks`;
     const webhookApiUrl = `https://${shop}/admin/api/2025-07/webhooks.json`;
@@ -40,10 +57,11 @@ async function registerWebhook(shop: string, accessToken: string, topic: string)
 }
 
 
+// 1. App Installation and Authentication Routes
 app.get('/auth', (req, res) => {
     const shop = req.query.shop as string;
     if (shop) {
-        const scopes = 'read_products,read_customers,write_customers,read_orders,read_checkouts';
+        const scopes = 'read_products,read_customers,write_customers,read_orders,read_checkouts,read_draft_orders';
         const redirectUri = `${APP_URL}/auth/callback`;
         const installUrl = `https://` + shop + `/admin/oauth/authorize?client_id=` + SHOPIFY_API_KEY +
             `&scope=` + scopes + `&redirect_uri=` + redirectUri;
@@ -55,7 +73,7 @@ app.get('/auth', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    const { shop, hmac, code } = req.query;
+    const { shop, code } = req.query;
 
     if (typeof shop !== 'string' || typeof code !== 'string') {
         return res.status(400).send('Invalid request');
@@ -74,13 +92,12 @@ app.get('/auth/callback', async (req, res) => {
 
         console.log('Successfully retrieved access token!');
 
-        // =================================================================
-        // NEW CODE - After installing, immediately register our webhooks.
-        // =================================================================
+        // After installing, immediately register our webhooks.
         await registerWebhook(shop, accessToken, 'customers/create');
         await registerWebhook(shop, accessToken, 'products/create');
         await registerWebhook(shop, accessToken, 'orders/create');
-        // Add more topics here if needed
+        await registerWebhook(shop, accessToken, 'checkouts/create'); // For abandoned carts
+        await registerWebhook(shop, accessToken, 'checkouts/update'); // For abandoned carts
 
         res.status(200).send('<h1>App Installed & Webhooks Registered Successfully!</h1><p>You can now close this window.</p>');
 
@@ -91,59 +108,46 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 
-const verifyShopifyWebhook = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const hmac = req.get('X-Shopify-Hmac-Sha256');
-    const shop = req.get('X-Shopify-Shop-Domain');
-    if (!hmac || !shop) return res.status(401).send('Unauthorized');
-
-    const rawBody = (req as any).rawBody;
-    const generatedHmac = crypto.createHmac('sha256', SHOPIFY_API_SECRET as string).update(rawBody).digest('base64');
-    
-    if (generatedHmac === hmac) {
-        next();
-    } else {
-        console.error('HMAC verification failed');
-        return res.status(401).send('Unauthorized');
-    }
-};
-
+// Middleware to keep the raw body for HMAC verification
 app.use(express.json({
     verify: (req: any, res, buf) => {
       req.rawBody = buf;
     }
 }));
 
-app.get('/', (req, res) => {
-    res.send('Shopify Data Ingestion Service is running!');
-});
 
-app.post('/webhooks', verifyShopifyWebhook, async (req, res) => {
+// 2. Webhook Ingestion Route
+app.post('/webhooks', async (req, res) => {
+    // We send a 200 OK response immediately to Shopify before processing
+    res.status(200).send('Webhook received');
+    
     try {
-        const topic = req.get('X-Shopify-Topic') as string;
-        const shopDomain = req.get('X-Shopify-Shop-Domain') as string;
-        const data = req.body; // The body is already parsed by express.json()
-
-        console.log(`Received webhook for topic: ${topic} from ${shopDomain}`);
-
-        let tenant = await prisma.tenant.findUnique({ where: { shopifyDomain: shopDomain } });
-        if (!tenant) {
-            tenant = await prisma.tenant.create({
-                data: {
-                    name: shopDomain.split('.')[0],
-                    shopifyDomain: shopDomain,
-                },
-            });
-            console.log(`Created new tenant: ${tenant.name}`);
+        if (!amqpChannel) {
+            console.error("RabbitMQ channel not available. Cannot queue webhook.");
+            return;
         }
-        await handleWebhook(topic, data, tenant.id);
-        res.status(200).send('Webhook received');
+
+        // Extract necessary info to send to the worker
+        const webhookData = {
+            topic: req.get('X-Shopify-Topic'),
+            shopDomain: req.get('X-Shopify-Shop-Domain'),
+            hmac: req.get('X-Shopify-Hmac-Sha256'),
+            body: (req as any).rawBody.toString('utf-8') // Send the raw body as a string
+        };
+
+        // Send the data to the RabbitMQ queue
+        amqpChannel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(webhookData)), { persistent: true });
+        console.log(`[Server] Webhook for topic ${webhookData.topic} sent to queue.`);
+
     } catch (error) {
-        console.error('Error processing webhook:', error);
-        res.status(500).send('Error processing webhook');
+        console.error('[Server] Error queuing webhook:', error);
     }
 });
 
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+app.listen(PORT, async () => {
+    await connectRabbitMQ(); // Connect to RabbitMQ when the server starts
+    console.log(`[Server] Web server is running on port ${PORT}`);
 });
+
