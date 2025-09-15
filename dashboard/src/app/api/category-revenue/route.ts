@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function GET(request: Request) {
   try {
     const tenantId = "20bacf76-d117-4516-88f8-8dae22428f56"; // Your Tenant ID
@@ -18,8 +17,6 @@ export async function GET(request: Request) {
         product: { select: { productType: true } },
       },
     });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const revenueByCategory = orderItems.reduce((acc: Record<string, number>, item) => {
       const category = item.product?.productType ?? 'Uncategorized';
       acc[category] = (acc[category] || 0) + item.price;

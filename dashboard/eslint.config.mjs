@@ -1,39 +1,36 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
+import tseslint from "typescript-eslint";
+import tsParser from "@typescript-eslint/parser";
 import { FlatCompat } from "@eslint/eslintrc";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import js from "@eslint/js";
 
 const compat = new FlatCompat({
-  baseDirectory: __dirname,
+  baseDirectory: import.meta.dirname,
+  resolvePluginsRelativeTo: import.meta.dirname,
 });
 
-const eslintConfig = [
-  // This is the original configuration for Next.js
-  ...compat.extends("next/core-web-vitals"),
-  
-  // This is the NEW configuration object we are adding.
-  // It specifically targets TypeScript files and applies our custom rules.
+export default [
+  // Add TypeScript support directly
   {
-    files: ["**/*.js", "**/*.jsx"], // Apply these rules only to TypeScript files
+    files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
-      parserOptions: {
-        project: "./tsconfig.json", // Tells ESLint where to find your TS config
-      },
+      parser: tsParser,
+      parserOptions: { project: "./tsconfig.json" },
+    },
+    plugins: {
+      "@typescript-eslint": tseslint,
     },
     rules: {
-      // This rule is for variables that are declared but not used.
-      // We are setting it to "warn" so it shows a yellow message instead of a red error.
+      ...js.configs.recommended.rules,
+      ...tseslint.configs.recommended.rules,
       "@typescript-eslint/no-unused-vars": "warn",
-
-      // This rule is for using the 'any' type.
-      // We are also setting this to "warn" to allow the project to compile.
       "@typescript-eslint/no-explicit-any": "warn",
     },
   },
-
-  // This section ignores folders, same as your original file.
+  // Include legacy Next.js and Prettier rules
+  ...compat.config({
+    extends: ["next/core-web-vitals", "prettier"],
+  }),
+  // Ignore patterns
   {
     ignores: [
       "node_modules/**",
@@ -44,5 +41,3 @@ const eslintConfig = [
     ],
   },
 ];
-
-export default eslintConfig;
