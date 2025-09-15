@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import AuthProvider from "@/components/SessionProvider"; // This is the line we added
+import AuthProvider from "@/components/SessionProvider"; // This is a required import
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,7 +13,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// We've updated the metadata to be more descriptive
 export const metadata: Metadata = {
   title: "Xeno Insights Dashboard",
   description: "Shopify Data Ingestion & Insights Service",
@@ -25,11 +24,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // BUG FIX: Added suppressHydrationWarning
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* This AuthProvider wrapper is the critical change */}
+        {/* CRITICAL: The AuthProvider must wrap the children */}
         <AuthProvider>
           {children}
         </AuthProvider>
@@ -37,4 +37,3 @@ export default function RootLayout({
     </html>
   );
 }
-

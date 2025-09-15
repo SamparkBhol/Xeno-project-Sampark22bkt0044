@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       take: 5, // Get the top 5
     });
 
-    const productIds = productSales.map(p => p.productId as string);
+    const productIds = productSales.map((p: { productId: string; }) => p.productId as string);
 
     const products = await prisma.product.findMany({
       where: {
@@ -42,8 +42,8 @@ export async function GET(request: Request) {
     });
 
     // Combine the sales data with the product titles for the chart
-    const topProducts = productSales.map(sale => {
-      const productInfo = products.find(p => p.id === sale.productId);
+    const topProducts = productSales.map((sale: { productId: any; _sum: { price: any; }; }) => {
+      const productInfo = products.find((p: { id: any; }) => p.id === sale.productId);
       return {
         name: productInfo?.title || 'Unknown Product',
         revenue: sale._sum.price || 0,

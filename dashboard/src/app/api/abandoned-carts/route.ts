@@ -3,26 +3,28 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// This API counts the number of checkouts that were started but not completed.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function GET(request: Request) {
   try {
-    const tenantId = "20bacf76-d117-4516-88f8-8dae22428f56"; // Your Tenant ID
+    // NOTE: This uses the tenantId from our previous successful setup.
+    const tenantId = "20bacf76-d117-4516-88f8-8dae22428f56"; 
 
-    // This query assumes a 'Checkout' model exists in your Prisma schema.
-    // If it doesn't, the catch block will handle it gracefully.
-    const abandonedCheckouts = await prisma.checkout.count({
+    // This query now correctly uses the new 'Checkout' model from your updated schema.
+    // It counts all checkouts that were started but never completed.
+    const abandonedCount = await prisma.checkout.count({
       where: {
         tenantId: tenantId,
-        completedAt: null, // The key indicator of an abandoned checkout
+        isCompleted: false, // The key filter for identifying abandoned carts
       },
     });
 
-    return NextResponse.json({ count: abandonedCheckouts });
+    return NextResponse.json({ count: abandonedCount });
+
   } catch (error) {
-    // This will likely fail if the 'Checkout' model isn't in the schema, which is okay.
-    console.warn("Could not fetch abandoned carts (this is expected if the Checkout model is not in schema)");
-    // We return a default value instead of crashing the dashboard.
-    return NextResponse.json({ count: 0 }); 
+    console.error("Failed to fetch abandoned carts:", error);
+    // Return a graceful response with a count of 0 if the query fails for any reason.
+    // This prevents the entire dashboard from crashing.
+    return NextResponse.json({ count: 0 });
   }
 }
 
