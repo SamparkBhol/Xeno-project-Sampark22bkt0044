@@ -37,6 +37,9 @@ The service is designed using a modern, decoupled three-tier architecture, which
 
 <img width="660" height="597" alt="image" src="https://github.com/user-attachments/assets/979c634b-41cb-4e45-b0f6-7458241fe8a4" />
 
+<img width="940" height="443" alt="image" src="https://github.com/user-attachments/assets/5c5a9f5c-294c-4252-a15a-8d265fd5e6a8" />
+
+
 **Components:**
 
 1.  **Frontend (Insights Dashboard):** A client-side application built with **Next.js** and **React**. It is responsible for all user interface elements, data visualization, and user interaction. It communicates with our own backend APIs, not directly with the database, ensuring a secure data flow.
