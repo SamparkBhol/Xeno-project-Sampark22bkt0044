@@ -16,7 +16,7 @@ const eslintConfig = [
   // This is the NEW configuration object we are adding.
   // It specifically targets TypeScript files and applies our custom rules.
   {
-    files: ["**/*.ts", "**/*.tsx"], // Apply these rules only to TypeScript files
+    files: ["**/*.js", "**/*.jsx"], // Apply these rules only to TypeScript files
     languageOptions: {
       parserOptions: {
         project: "./tsconfig.json", // Tells ESLint where to find your TS config

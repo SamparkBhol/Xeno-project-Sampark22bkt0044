@@ -202,4 +202,3 @@ model Checkout {
   @@index([tenantId])
   @@index([customerId])
 }
-
